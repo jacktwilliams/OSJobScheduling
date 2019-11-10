@@ -2,12 +2,15 @@ package driver;
 
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Scanner;
+import java.util.function.Function;
 
 public class Driver {
 	public static final String fname = "jobs.dat";
@@ -20,34 +23,84 @@ public class Driver {
 	
 	public static void main(String[] args) throws Exception {
 		readData();
-		System.out.println(jobs);
-		run();
+		Function<Job[], Job> roundRobin = (candidates) -> {
+			boolean encounteredLast = false;
+			Job picked = null;
+			for (Job j : candidates) {
+				if (j.isLastPicked()) {
+					encounteredLast = true;
+				}
+				else if (encounteredLast) {
+					picked = j;
+					encounteredLast = false;
+				}
+			}
+			if (picked == null) {
+				return candidates[0];
+			}
+			return picked;
+		};
+		Function<Job[], Job> sjf = (candidates) -> {
+			Job pick = Arrays.asList(candidates).stream().sorted(new Comparator<Job>() {
+				@Override
+				public int compare(Job arg0, Job arg1) {
+					return arg0.peekNextCPUBurst() <= arg1.peekNextCPUBurst() ? -1 : 1;
+				}
+			}).findFirst().get();
+			return pick;
+		};
+		Function<Job[], Job> priority = (candidates) -> {
+			Job pick = Arrays.asList(candidates).stream().sorted(new Comparator<Job>() {
+				@Override
+				public int compare(Job arg0, Job arg1) {
+					return arg0.getPriority() <= arg1.getPriority() ? -1 : 1;
+				}
+			}).findFirst().get();
+			return pick;
+		};
+		System.out.println("Round Robin");
+		run(roundRobin);
+		printStats();
+		resetState();
+		readData();
+		System.out.println("Shortest Job First");
+		run(sjf);
+		printStats();
+		resetState();
+		readData();
+		System.out.println("Priority Scheduling");
+		run(priority);
+		printStats();
 	}
 	
-	private static void run() throws Exception {
+	private static void run(Function<Job[], Job> jobSelector) throws Exception {
 		for (Job j : jobs) {
 			jobMessage(j, "has arrived.");
 		}
-//		Iterator<Job> itr = jobs.iterator();
-//		for (int i = 0; i < degree; ++ i) {
-//			if (itr.hasNext()) {
-//				Job current = itr.next();
-//				jobMessage(current, " loaded and ready");
-//				current.placeInReadyQueue(time);
-//			}
-//		}
+
 		loadJobs();
 		
 		while (jobs.stream().anyMatch(j -> !j.isCompleted())) {
 			Job[] candidates = jobs.stream().filter((j) -> j.isReady()).toArray(Job[]::new);
 			if (candidates.length > 0) {
-				Job pick = candidates[0]; //TODO different selection strategies
+				Job pick = jobSelector.apply(candidates);
+				resetLastPicked();
+				pick.setLastPicked(true);
 				runTimeSlot(pick);
 			} else {
 				//all jobs could be waiting
 				jumpToNextIOCompletionEvent();
 			}
 			contextSwitch();
+		}
+	}
+	
+	/*
+	 * Using for round robin
+	 */
+	private static void resetLastPicked() {
+		for (Job j : jobs) {
+			j.setLastPicked(false);
 		}
 	}
 	
@@ -148,6 +201,7 @@ public class Driver {
 	}
 	
 	private static void readData() throws FileNotFoundException {
+		jobs = new LinkedList<Job>();
 		Scanner readIn = new Scanner(new File(fname));
 		timer = readIn.nextInt();
 		degree = readIn.nextInt();
@@ -167,6 +221,25 @@ public class Driver {
 			readL.close();
 		}
 		readIn.close();
+	}
+	
+	private static void resetState() {
+		time = 0;
+	}
+	
+	private static void printStats() {
+		printStat("Time to complete", time);
+		int sum = 0;
+		for (Job j : jobs) {
+			sum += j.getTotalReadyWait();
+			System.out.format("'%s' arrival, completion, ready-wait: %d, %d, %d%n", 
+					j.getName(), j.getArrival(), j.getCompletion(), j.getTotalReadyWait());
+		}
+		printStat("Average ready-wait", sum / (double) jobs.size());
+	}
+	
+	private static void printStat(String name, double value) {
+		System.out.format("%-20s: %f%n", name, value);
 	}
 	
 	private static void printMessage(String msg) {

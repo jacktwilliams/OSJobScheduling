@@ -17,6 +17,7 @@ public class Job {
 	private Integer ioCompletionTime; //if we are doing IO (waiting) this field holds the time at which IO will be done.
 	private String waitingFor; //holds friendly string naming what we are waiting for.
 	private boolean ready = false, completed = false, waiting = false;
+	private boolean lastPicked = false; //using for round robin
 	
 
 	public Job(String name, int id, int priority, String execSeq) {
@@ -55,6 +56,23 @@ public class Job {
 	public String nextOP() {
 		if (execSeq.size() > 0) {
 			return execSeq.pop();
+		}
+		return null;
+	}
+	
+	public Integer peekNextCPUBurst() {
+		for (String op : execSeq) {
+			Integer burst = null;
+			boolean failed = false;
+			try {
+				burst = Integer.parseInt(op);
+			} catch (Exception e) {
+				failed = true;
+			} finally {
+				if (!failed) {
+					return burst;
+				}
+			}
 		}
 		return null;
 	}
@@ -136,6 +154,14 @@ public class Job {
 
 	public boolean isCompleted() {
 		return completed;
+	}
+
+	public boolean isLastPicked() {
+		return lastPicked;
+	}
+
+	public void setLastPicked(boolean lastPicked) {
+		this.lastPicked = lastPicked;
 	}
 
 	public String toString() {
